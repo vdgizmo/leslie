@@ -1,11 +1,12 @@
 // Tema aplicado primeiro, para evitar piscar claro/escuro
 try{document.documentElement.dataset.theme=localStorage.getItem("mp-theme")||(matchMedia("(prefers-color-scheme:dark)").matches?"dark":"light")}catch(e){}
 
+const GITHUB_REPO = ''; // opcional: 'usuario/repositorio'. Só é necessário se o site usar domínio próprio (fora de github.io)
 const $ = s => document.querySelector(s);
 const h = (t, p = {}, ...k) => { const e = Object.assign(document.createElement(t), p); e.append(...k); return e; };
 const AUDIO = /\.(mp3|wav)$/i, IMG = /\.(jpe?g|png|webp|gif)$/i;
 const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' });
-let albums = [], cur = null, queue = [], qi = -1;
+let albums = [], cur = null, queue = [], qi = -1, loading = false;
 let meta = JSON.parse(localStorage.getItem('mp-meta') || '{}');
 const save = () => localStorage.setItem('mp-meta', JSON.stringify(meta));
 const au = $('#au');
@@ -54,6 +55,39 @@ async function scanHttp(url = new URL('./', location.href).href, path = '', out 
   }
   return out;
 }
+async function scanGithub() {   // GitHub Pages não lista pastas: usa a API do GitHub para ler a árvore do repositório
+  const dirParts = location.pathname.replace(/[^/]*$/, '').split('/').filter(Boolean).map(decodeURIComponent);
+  const host = location.hostname, cands = [];
+  if (GITHUB_REPO) cands.push({ repo: GITHUB_REPO, dir: dirParts });
+  else {
+    const owner = host.replace(/\.github\.io$/, '');
+    if (dirParts.length) cands.push({ repo: owner + '/' + dirParts[0], dir: dirParts.slice(1) });
+    cands.push({ repo: owner + '/' + host, dir: dirParts });
+  }
+  for (const c of cands) for (const ref of ['HEAD', 'gh-pages']) {
+    try {
+      const r = await fetch(`https://api.github.com/repos/${c.repo}/git/trees/${ref}?recursive=1`);
+      if (!r.ok) continue;
+      const blobs = (await r.json()).tree.filter(x => x.type === 'blob').map(x => x.path);
+      const sub = c.dir.length ? c.dir.join('/') + '/' : '';
+      const prefix = ['', 'docs/'].map(p => p + sub).find(p => blobs.includes(p + 'index.html'));
+      if (prefix === undefined) continue;
+      const list = blobs.filter(p => p.startsWith(prefix)).map(p => p.slice(prefix.length))
+        .filter(p => !p.split('/').some(x => x.startsWith('.')) && (AUDIO.test(p) || IMG.test(p) || p === 'biblioteca.json'));
+      try { localStorage.setItem('mp-gh', JSON.stringify(list)); } catch {}
+      return ghEntries(list);
+    } catch {}
+  }
+  const old = JSON.parse(localStorage.getItem('mp-gh') || 'null');   // sem rede/limite da API: usa a última lista
+  if (old) return ghEntries(old);
+  throw 0;
+}
+function ghEntries(list) {
+  return list.map(p => {
+    const parts = p.split('/'), name = parts.pop();
+    return { album: parts.join('/'), name, get: () => new URL(p.split('/').map(encodeURIComponent).join('/'), location.href).href };
+  });
+}
 async function build(entries) {
   const j = entries.find(e => !e.album && e.name === 'biblioteca.json');
   if (j) try { const f = await (await fetch(await urlOf(j))).json(); for (const k in f) meta[k] ??= f[k]; } catch {}
@@ -90,10 +124,11 @@ const resize = f => new Promise(r => {
 function renderGrid() {
   cur = null; const v = $('#view'); v.replaceChildren();
   if (!albums.length) {
-    v.append(h('div', { className: 'empty' }, h('h2', { textContent: 'Nenhum álbum carregado' }),
-      h('p', { textContent: location.protocol === 'file:'
-        ? 'Abrindo o arquivo direto do disco, o navegador não pode listar as pastas. Rode "python -m http.server" na pasta do index.html e abra http://localhost:8000, ou use "Escolher pasta".'
-        : 'Este servidor não retornou a listagem das subpastas. Ative a listagem de diretórios (ex.: "python -m http.server") ou use "Escolher pasta".' })));
+    const msg = loading ? 'Procurando as músicas na pasta…'
+      : location.protocol === 'file:' ? 'Abrindo o arquivo direto do disco, o navegador não pode listar as pastas. Rode "python -m http.server" na pasta do index.html e abra http://localhost:8000, ou use "Escolher pasta".'
+      : (GITHUB_REPO || /\.github\.io$/.test(location.hostname)) ? 'Não consegui listar o repositório pela API do GitHub (limite de requisições, repositório privado ou nenhuma música encontrada). Tente de novo em alguns minutos.'
+      : 'Este servidor não retornou a listagem das subpastas. Ative a listagem de diretórios (ex.: "python -m http.server") ou use "Escolher pasta".';
+    v.append(h('div', { className: 'empty' }, h('h2', { textContent: loading ? 'Carregando' : 'Nenhum álbum carregado' }), h('p', { textContent: msg })));
     return;
   }
   const g = h('div', { className: 'grid' });
@@ -272,10 +307,12 @@ $('#theme').onclick = () => {
 applyTheme(document.documentElement.dataset.theme || 'light');
 
 (async () => {
-  renderGrid();
-  if (/^https?:/.test(location.protocol)) {            // servido por servidor com listagem de pastas
-    try { const e = await scanHttp(); if (e.some(x => AUDIO.test(x.name))) return build(e); } catch {}
+  loading = true; renderGrid();
+  if (/^https?:/.test(location.protocol)) {            // servidor com listagem de pastas ou GitHub Pages
+    const gh = GITHUB_REPO || /\.github\.io$/.test(location.hostname);
+    try { const e = await (gh ? scanGithub() : scanHttp()); if (e.some(x => AUDIO.test(x.name))) { loading = false; return build(e); } } catch {}
   }
+  loading = false; renderGrid();
   try {                                                  // pasta usada anteriormente
     const dir = await idbGet('dir'); if (!dir) return;
     if (await dir.queryPermission({ mode: 'read' }) === 'granted') return build(await walk(dir));
