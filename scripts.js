@@ -2,7 +2,7 @@
 try{document.documentElement.dataset.theme=localStorage.getItem("mp-theme")||(matchMedia("(prefers-color-scheme:dark)").matches?"dark":"light")}catch(e){}
 
 const GITHUB_REPO = ''; // opcional: 'usuario/repositorio'. Só é necessário se o site usar domínio próprio (fora de github.io)
-const $ = s => document.querySelector(s);
+const $ = s => document.querySelector(s) || {};   // elemento comentado no HTML não quebra o script
 const h = (t, p = {}, ...k) => { const e = Object.assign(document.createElement(t), p); e.append(...k); return e; };
 const AUDIO = /\.(mp3|wav)$/i, IMG = /\.(jpe?g|png|webp|gif)$/i;
 const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' });
@@ -73,7 +73,7 @@ async function scanGithub() {   // GitHub Pages não lista pastas: usa a API do 
       const prefix = ['', 'docs/'].map(p => p + sub).find(p => blobs.includes(p + 'index.html'));
       if (prefix === undefined) continue;
       const list = blobs.filter(p => p.startsWith(prefix)).map(p => p.slice(prefix.length))
-        .filter(p => !p.split('/').some(x => x.startsWith('.')) && (AUDIO.test(p) || IMG.test(p) || p === 'biblioteca.json'));
+        .filter(p => !p.split('/').some(x => x.startsWith('.')) && (AUDIO.test(p) || IMG.test(p) || /^biblioteca\.json$/i.test(p)));
       try { localStorage.setItem('mp-gh', JSON.stringify(list)); } catch {}
       return ghEntries(list);
     } catch {}
@@ -88,9 +88,24 @@ function ghEntries(list) {
     return { album: parts.join('/'), name, get: () => new URL(p.split('/').map(encodeURIComponent).join('/'), location.href).href };
   });
 }
+const isEmpty = v => v == null || v === '' || (typeof v === 'object' && !Object.keys(v).length);
+function mergeMeta(f) {   // o arquivo preenche o que o cadastro local ainda não tem
+  for (const k in f) { const l = meta[k] ??= {}; for (const p in f[k]) if (isEmpty(l[p])) l[p] = f[k][p]; }
+}
+function adoptOrphans() {   // cadastro com chave de pasta diferente (ex.: "") é reaproveitado pelo álbum cujas faixas coincidem
+  const keys = new Set(albums.map(a => a.key));
+  const orphans = Object.keys(meta).filter(k => !keys.has(k) && meta[k]?.order?.length);
+  for (const a of albums) {
+    const m = meta[a.key];
+    if (m && (m.order?.length || Object.keys(m.tracks || {}).length)) continue;
+    const names = new Set(a.tracks.map(t => t.name));
+    const k = orphans.find(o => meta[o].order.filter(n => names.has(n)).length >= Math.ceil(names.size / 2));
+    if (k) meta[a.key] = structuredClone(meta[k]);
+  }
+}
 async function build(entries) {
-  const j = entries.find(e => !e.album && e.name === 'biblioteca.json');
-  if (j) try { const f = await (await fetch(await urlOf(j))).json(); for (const k in f) meta[k] ??= f[k]; } catch {}
+  const j = entries.find(e => !e.album && /^biblioteca\.json$/i.test(e.name));
+  if (j) try { const f = await (await fetch(await urlOf(j))).json(); mergeMeta(f); } catch {}
   const m = new Map();
   for (const e of entries) {
     if (!m.has(e.album)) m.set(e.album, { key: e.album, folder: e.album || '(raiz)', tracks: [], cover: null });
@@ -99,6 +114,7 @@ async function build(entries) {
     else if (IMG.test(e.name) && (!a.cover || /cover|capa|folder|front/i.test(e.name))) a.cover = e;
   }
   albums = [...m.values()].filter(a => a.tracks.length).sort((x, y) => collator.compare(x.folder, y.folder));
+  adoptOrphans();
   renderGrid();
 }
 
@@ -157,7 +173,8 @@ function renderAlbum(a) {
       h('div', { className: 'mut', textContent: `${M(a).artist || 'Artista não informado'}${M(a).year ? ' · ' + M(a).year : ''}` }),
       h('div', { className: 'btns' },
         h('button', { className: 'pri', textContent: '▶ Tocar álbum', onclick: () => playList(a, ts, shuffle ? Math.floor(Math.random() * ts.length) : 0) }),
-        h('button', { textContent: 'Cadastrar / editar', onclick: () => openEdit(a) })))),
+        // h('button', { textContent: 'Cadastrar / editar', onclick: () => openEdit(a) }),   // ← remova o "//" do início para exibir o botão
+      ))),
     list);
   mark();
 }
@@ -261,10 +278,12 @@ au.onended = () => {
   if (repeat === 'one') { au.currentTime = 0; au.play(); return; }
   const i = nextIndex(); if (i >= 0) playAt(i); else $('#pp').textContent = '▶';
 };
-au.ontimeupdate = () => { $('#cur').textContent = fmt(au.currentTime); $('#seek').value = au.duration ? au.currentTime / au.duration * 1000 : 0; };
+const fill = el => el.style.setProperty('--p', (el.value - el.min) / (el.max - el.min) * 100 + '%');   // preenchimento das barras
+au.ontimeupdate = () => { $('#cur').textContent = fmt(au.currentTime); $('#seek').value = au.duration ? au.currentTime / au.duration * 1000 : 0; fill($('#seek')); };
 au.onloadedmetadata = () => $('#dur').textContent = fmt(au.duration);
-$('#seek').oninput = e => au.duration && (au.currentTime = e.target.value / 1000 * au.duration);
-$('#vol').oninput = e => au.volume = e.target.value;
+$('#seek').oninput = e => { fill(e.target); au.duration && (au.currentTime = e.target.value / 1000 * au.duration); };
+$('#vol').oninput = e => { au.volume = e.target.value; fill(e.target); };
+fill($('#vol')); fill($('#seek'));
 if ('mediaSession' in navigator) {
   navigator.mediaSession.setActionHandler('previoustrack', goPrev);
   navigator.mediaSession.setActionHandler('nexttrack', goNext);
@@ -297,7 +316,7 @@ $('#imp').onchange = async e => {
 const applyTheme = t => {
   document.documentElement.dataset.theme = t;
   $('#theme').textContent = t === 'dark' ? '☀ Modo claro' : '🌙 Modo escuro';
-  $('meta[name=theme-color]').content = t === 'dark' ? '#12141c' : '#e9ecf1';
+  $('meta[name=theme-color]').content = t === 'dark' ? '#0c0e14' : '#eef1f5';
 };
 $('#theme').onclick = () => {
   const t = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
