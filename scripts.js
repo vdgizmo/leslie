@@ -1,353 +1,166 @@
-// Tema aplicado primeiro, para evitar piscar claro/escuro
-try{document.documentElement.dataset.theme=localStorage.getItem("mp-theme")||(matchMedia("(prefers-color-scheme:dark)").matches?"dark":"light")}catch(e){}
+/* ===== Tokens ===== */
+:root{
+  --bg:#eef1f5;--bg2:#d9e8ec;--panel:#fff;--glass:rgba(255,255,255,.74);
+  --ink:#12151d;--mut:#667085;--line:rgba(18,21,29,.09);--track:rgba(18,21,29,.14);
+  --ac:#066674;--ac2:#0d93a6;--acink:#fff;--acsoft:rgba(6,102,116,.1);--field:#fff;
+  --shadow:0 1px 2px rgba(16,24,40,.06),0 14px 34px -14px rgba(16,24,40,.22);
+  color-scheme:light}
+:root[data-theme=dark]{
+  --bg:#0c0e14;--bg2:#15203a;--panel:#161922;--glass:rgba(22,25,34,.72);
+  --ink:#eceef5;--mut:#9aa2b8;--line:rgba(255,255,255,.08);--track:rgba(255,255,255,.16);
+  --ac:#7b93ff;--ac2:#a6b6ff;--acink:#0b1030;--acsoft:rgba(123,147,255,.15);--field:#0f1219;
+  --shadow:0 1px 2px rgba(0,0,0,.4),0 18px 38px -16px rgba(0,0,0,.7);
+  color-scheme:dark}
 
-const GITHUB_REPO = ''; // opcional: 'usuario/repositorio'. Só é necessário se o site usar domínio próprio (fora de github.io)
-const $ = s => document.querySelector(s) || {};   // elemento comentado no HTML não quebra o script
-const h = (t, p = {}, ...k) => { const e = Object.assign(document.createElement(t), p); e.append(...k); return e; };
-const AUDIO = /\.(mp3|wav)$/i, IMG = /\.(jpe?g|png|webp|gif)$/i;
-const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' });
-let albums = [], cur = null, queue = [], qi = -1, loading = false;
-let meta = JSON.parse(localStorage.getItem('mp-meta') || '{}');
-const save = () => localStorage.setItem('mp-meta', JSON.stringify(meta));
-const au = $('#au');
+/* ===== Base ===== */
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+[hidden]{display:none!important}
+html{scrollbar-color:var(--track) transparent}
+body{margin:0;min-height:100dvh;color:var(--ink);padding-bottom:150px;
+  font:15px/1.5 ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;-webkit-font-smoothing:antialiased;
+  background:radial-gradient(900px 520px at 0% -8%,var(--acsoft),transparent 62%),radial-gradient(800px 520px at 100% 0%,var(--bg2),transparent 58%),var(--bg);
+  background-repeat:no-repeat}
+::selection{background:var(--acsoft)}
+h1,h2,h3{font-family:"Iowan Old Style",Palatino,Georgia,serif;font-weight:700;margin:0;letter-spacing:-.01em}
+.mut{color:var(--mut)}
 
-/* ---------- cadastro (metadados) ---------- */
-const M = a => meta[a.key] ??= { order: [], tracks: {} };
-const base = n => n.replace(/\.[^.]+$/, '').replace(/^\s*\d+\s*[-._)]\s*/, '');
-const atitle = a => M(a).title || a.folder.split('/').pop();
-const tname = (a, t) => M(a).tracks?.[t.name]?.title || base(t.name);
-const tartist = (a, t) => M(a).tracks?.[t.name]?.artist || M(a).artist || '';
-function sorted(a) {
-  const o = M(a).order || [], idx = n => { const i = o.indexOf(n); return i < 0 ? 1e9 : i; };
-  return [...a.tracks].sort((x, y) => idx(x.name) - idx(y.name) || collator.compare(x.name, y.name));
-}
+/* ===== Botões e campos ===== */
+button{font:inherit;font-weight:500;color:var(--ink);background:var(--panel);border:1px solid var(--line);padding:8px 16px;border-radius:999px;cursor:pointer;
+  transition:background .15s,border-color .15s,transform .1s,box-shadow .15s,filter .15s;touch-action:manipulation}
+button:active{transform:scale(.96)}
+button.pri{background:linear-gradient(135deg,var(--ac),var(--ac2));border-color:transparent;color:var(--acink);font-weight:600;box-shadow:0 8px 18px -8px var(--ac)}
+button:focus-visible{outline:2px solid var(--ac);outline-offset:2px}
+@media(hover:hover){button:hover{background:var(--acsoft);border-color:var(--ac)}button.pri:hover{background:linear-gradient(135deg,var(--ac),var(--ac2));filter:brightness(1.1)}}
+input:not([type=range]){font:inherit;color:var(--ink);background:var(--field);border:1px solid var(--line);border-radius:12px;padding:9px 12px;min-width:0;transition:border-color .15s,box-shadow .15s}
+input:not([type=range]):focus{outline:none;border-color:var(--ac);box-shadow:0 0 0 4px var(--acsoft)}
+input::placeholder{color:var(--mut);opacity:.8}
 
-/* ---------- arquivos ---------- */
-const cache = new WeakMap();
-async function urlOf(e) {
-  if (!e) return null;
-  if (!cache.has(e)) { let v = await e.get(); if (v instanceof Blob) v = URL.createObjectURL(v); cache.set(e, v); }
-  return cache.get(e);
-}
-async function walk(dir, path = '', out = []) {            // File System Access API
-  for await (const [name, hd] of dir.entries()) {
-    if (name.startsWith('.')) continue;
-    if (hd.kind === 'file') out.push({ album: path, name, get: () => hd.getFile() });
-    else await walk(hd, path ? path + '/' + name : name, out);
-  }
-  return out;
-}
-async function scanHttp(url = new URL('./', location.href).href, path = '', out = [], depth = 0) { // listagem de diretório do servidor
-  const r = await fetch(url); if (!r.ok) throw 0;
-  const doc = new DOMParser().parseFromString(await r.text(), 'text/html');
-  const root = new URL(url).pathname;
-  for (const a of doc.querySelectorAll('a[href]')) {
-    const href = a.getAttribute('href');
-    if (/^(\?|#|mailto:|javascript:)/i.test(href)) continue;
-    const u = new URL(href, url);
-    if (u.origin !== location.origin || !u.pathname.startsWith(root) || u.pathname === root) continue;
-    const rel = u.pathname.slice(root.length);
-    if (rel.split('/').filter(Boolean).length !== 1) continue;   // ignora pasta-pai e links fora do nível atual
-    const name = decodeURIComponent(rel.replace(/\/$/, ''));
-    if (name.startsWith('.')) continue;
-    if (rel.endsWith('/')) { if (depth < 3) await scanHttp(u.href, path ? path + '/' + name : name, out, depth + 1); }
-    else out.push({ album: path, name, get: () => u.href });
-  }
-  return out;
-}
-async function scanGithub() {   // GitHub Pages não lista pastas: usa a API do GitHub para ler a árvore do repositório
-  const dirParts = location.pathname.replace(/[^/]*$/, '').split('/').filter(Boolean).map(decodeURIComponent);
-  const host = location.hostname, cands = [];
-  if (GITHUB_REPO) cands.push({ repo: GITHUB_REPO, dir: dirParts });
-  else {
-    const owner = host.replace(/\.github\.io$/, '');
-    if (dirParts.length) cands.push({ repo: owner + '/' + dirParts[0], dir: dirParts.slice(1) });
-    cands.push({ repo: owner + '/' + host, dir: dirParts });
-  }
-  for (const c of cands) for (const ref of ['HEAD', 'gh-pages']) {
-    try {
-      const r = await fetch(`https://api.github.com/repos/${c.repo}/git/trees/${ref}?recursive=1`);
-      if (!r.ok) continue;
-      const blobs = (await r.json()).tree.filter(x => x.type === 'blob').map(x => x.path);
-      const sub = c.dir.length ? c.dir.join('/') + '/' : '';
-      const prefix = ['', 'docs/'].map(p => p + sub).find(p => blobs.includes(p + 'index.html'));
-      if (prefix === undefined) continue;
-      const list = blobs.filter(p => p.startsWith(prefix)).map(p => p.slice(prefix.length))
-        .filter(p => !p.split('/').some(x => x.startsWith('.')) && (AUDIO.test(p) || IMG.test(p) || /^biblioteca\.json$/i.test(p)));
-      try { localStorage.setItem('mp-gh', JSON.stringify(list)); } catch {}
-      return ghEntries(list);
-    } catch {}
-  }
-  const old = JSON.parse(localStorage.getItem('mp-gh') || 'null');   // sem rede/limite da API: usa a última lista
-  if (old) return ghEntries(old);
-  throw 0;
-}
-function ghEntries(list) {
-  return list.map(p => {
-    const parts = p.split('/'), name = parts.pop();
-    return { album: parts.join('/'), name, get: () => new URL(p.split('/').map(encodeURIComponent).join('/'), location.href).href };
-  });
-}
-const isEmpty = v => v == null || v === '' || (typeof v === 'object' && !Object.keys(v).length);
-function mergeMeta(f) {   // o arquivo preenche o que o cadastro local ainda não tem
-  for (const k in f) { const l = meta[k] ??= {}; for (const p in f[k]) if (isEmpty(l[p])) l[p] = f[k][p]; }
-}
-function adoptOrphans() {   // cadastro com chave de pasta diferente (ex.: "") é reaproveitado pelo álbum cujas faixas coincidem
-  const keys = new Set(albums.map(a => a.key));
-  const orphans = Object.keys(meta).filter(k => !keys.has(k) && meta[k]?.order?.length);
-  for (const a of albums) {
-    const m = meta[a.key];
-    if (m && (m.order?.length || Object.keys(m.tracks || {}).length)) continue;
-    const names = new Set(a.tracks.map(t => t.name));
-    const k = orphans.find(o => meta[o].order.filter(n => names.has(n)).length >= Math.ceil(names.size / 2));
-    if (k) meta[a.key] = structuredClone(meta[k]);
-  }
-}
-async function build(entries) {
-  const j = entries.find(e => !e.album && /^biblioteca\.json$/i.test(e.name));
-  if (j) try { const f = await (await fetch(await urlOf(j))).json(); mergeMeta(f); } catch {}
-  const m = new Map();
-  for (const e of entries) {
-    if (!m.has(e.album)) m.set(e.album, { key: e.album, folder: e.album || '(raiz)', tracks: [], cover: null });
-    const a = m.get(e.album);
-    if (AUDIO.test(e.name)) a.tracks.push(e);
-    else if (IMG.test(e.name) && (!a.cover || /cover|capa|folder|front/i.test(e.name))) a.cover = e;
-  }
-  albums = [...m.values()].filter(a => a.tracks.length).sort((x, y) => collator.compare(x.folder, y.folder));
-  adoptOrphans();
-  renderGrid();
-}
+input[type=range]{-webkit-appearance:none;appearance:none;background:transparent;height:20px;padding:0;margin:0;border:0;cursor:pointer;--p:0%}
+input[type=range]::-webkit-slider-runnable-track{height:5px;border-radius:99px;background:linear-gradient(var(--ac),var(--ac)) 0 0/var(--p) 100% no-repeat,var(--track)}
+input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:14px;height:14px;margin-top:-4.5px;border-radius:50%;background:#fff;border:3px solid var(--ac);box-shadow:0 2px 6px rgba(0,0,0,.3);transition:transform .12s}
+input[type=range]::-moz-range-track{height:5px;border-radius:99px;background:var(--track)}
+input[type=range]::-moz-range-progress{height:5px;border-radius:99px;background:var(--ac)}
+input[type=range]::-moz-range-thumb{width:8px;height:8px;border-radius:50%;background:#fff;border:3px solid var(--ac);box-shadow:0 2px 6px rgba(0,0,0,.3)}
+@media(hover:hover){input[type=range]:hover::-webkit-slider-thumb{transform:scale(1.25)}}
+input[type=range]:focus-visible{outline:none}
+input[type=range]:focus-visible::-webkit-slider-thumb{box-shadow:0 0 0 4px var(--acsoft)}
 
-/* ---------- capas ---------- */
-function paint(el, url, a) {
-  if (url) { el.style.backgroundColor = ''; el.style.backgroundImage = `url("${url}")`; el.textContent = ''; return; }
-  let n = 0; for (const c of a.folder) n = (n * 31 + c.charCodeAt(0)) % 360;
-  el.style.backgroundImage = ''; el.style.backgroundColor = `hsl(${n} 38% 42%)`;
-  el.textContent = atitle(a).charAt(0).toUpperCase();
-}
-const coverUrl = async a => M(a).cover || await urlOf(a.cover);
-const setCover = (el, a) => { paint(el, null, a); coverUrl(a).then(u => u && paint(el, u, a)); };
-const resize = f => new Promise(r => {
-  const i = new Image();
-  i.onload = () => {
-    const s = Math.min(1, 500 / Math.max(i.width, i.height)), c = h('canvas', { width: i.width * s, height: i.height * s });
-    c.getContext('2d').drawImage(i, 0, 0, c.width, c.height); r(c.toDataURL('image/jpeg', .85));
-  };
-  i.src = URL.createObjectURL(f);
-});
+/* ===== Cabeçalho ===== */
+header{position:sticky;top:0;z-index:20;display:flex;gap:8px;align-items:center;flex-wrap:wrap;
+  padding:calc(14px + env(safe-area-inset-top)) max(24px,calc((100% - 1100px)/2)) 14px;
+  background:var(--glass);-webkit-backdrop-filter:blur(16px) saturate(1.5);backdrop-filter:blur(16px) saturate(1.5);border-bottom:1px solid var(--line)}
+header h1{font-size:24px;margin-right:auto;display:flex;align-items:center}
+header h1::before{content:"♪";display:inline-grid;place-items:center;width:34px;height:34px;margin-right:12px;border-radius:11px;
+  background:linear-gradient(135deg,var(--ac),var(--ac2));color:var(--acink);font:700 18px system-ui;box-shadow:0 8px 18px -8px var(--ac)}
+header button{font-size:13.5px;padding:7px 14px}
+main{max-width:1100px;margin:0 auto;padding:28px 24px}
 
-/* ---------- telas ---------- */
-function renderGrid() {
-  cur = null; const v = $('#view'); v.replaceChildren();
-  if (!albums.length) {
-    const msg = loading ? 'Procurando as músicas na pasta…'
-      : location.protocol === 'file:' ? 'Abrindo o arquivo direto do disco, o navegador não pode listar as pastas. Rode "python -m http.server" na pasta do index.html e abra http://localhost:8000, ou use "Escolher pasta".'
-      : (GITHUB_REPO || /\.github\.io$/.test(location.hostname)) ? 'Não consegui listar o repositório pela API do GitHub (limite de requisições, repositório privado ou nenhuma música encontrada). Tente de novo em alguns minutos.'
-      : 'Este servidor não retornou a listagem das subpastas. Ative a listagem de diretórios (ex.: "python -m http.server") ou use "Escolher pasta".';
-    v.append(h('div', { className: 'empty' }, h('h2', { textContent: loading ? 'Carregando' : 'Nenhum álbum carregado' }), h('p', { textContent: msg })));
-    return;
-  }
-  const g = h('div', { className: 'grid' });
-  albums.forEach(a => {
-    const c = h('div', { className: 'cover' });
-    setCover(c, a);
-    g.append(h('div', { className: 'card', tabIndex: 0, onclick: () => renderAlbum(a), onkeydown: e => e.key === 'Enter' && renderAlbum(a) },
-      c, h('b', { textContent: atitle(a) }),
-      h('small', { textContent: `${M(a).artist || 'Artista não informado'} · ${a.tracks.length} faixa${a.tracks.length > 1 ? 's' : ''}` })));
-  });
-  v.append(g);
-}
-function renderAlbum(a) {
-  cur = a; const v = $('#view'), ts = sorted(a);
-  const cv = h('div', { className: 'cover' }); setCover(cv, a);
-  const list = h('ol', { className: 'tracks' });
-  ts.forEach((t, i) => list.append(h('li', { tabIndex: 0, onclick: () => playList(a, ts, i), onkeydown: e => e.key === 'Enter' && playList(a, ts, i) },
-    h('span', { className: 'mut', textContent: i + 1 }),
-    h('div', {}, h('b', { textContent: tname(a, t) }), h('small', { textContent: tartist(a, t) })),
-    h('small', { className: 'mut', textContent: t.name.split('.').pop().toUpperCase() }))));
-  list.querySelectorAll('li').forEach((li, i) => li.dataset.k = a.key + '|' + ts[i].name);
-  v.replaceChildren(
-    h('button', { textContent: '← Álbuns', onclick: renderGrid }),
-    h('div', { className: 'head' }, cv, h('div', {},
-      h('h2', { textContent: atitle(a) }),
-      h('div', { className: 'mut', textContent: `${M(a).artist || 'Artista não informado'}${M(a).year ? ' · ' + M(a).year : ''}` }),
-      h('div', { className: 'btns' },
-        h('button', { className: 'pri', textContent: '▶ Tocar álbum', onclick: () => playList(a, ts, shuffle ? Math.floor(Math.random() * ts.length) : 0) }),
-        // h('button', { textContent: 'Cadastrar / editar', onclick: () => openEdit(a) }),   // ← remova o "//" do início para exibir o botão
-      ))),
-    list);
-  mark();
-}
-function mark() {
-  const c = queue[qi];
-  document.querySelectorAll('ol.tracks li').forEach(li => li.classList.toggle('on', !!c && li.dataset.k === c.a.key + '|' + c.t.name));
-}
+/* ===== Capas ===== */
+.cover{aspect-ratio:1;width:100%;display:grid;place-items:center;border-radius:16px;
+  background:linear-gradient(135deg,rgba(255,255,255,.24),rgba(0,0,0,.2)) center/contain no-repeat;background-color:var(--track);
+  font:700 56px Georgia,serif;color:rgba(255,255,255,.88);text-shadow:0 2px 10px rgba(0,0,0,.25);box-shadow:var(--shadow)}
+.cover.sm{width:52px;font-size:22px;flex:none;border-radius:12px;box-shadow:0 4px 12px -4px rgba(0,0,0,.35)}
 
-/* ---------- editor de cadastro ---------- */
-function openEdit(a) {
-  const m = M(a), d = $('#dlg'); let cover = m.cover;
-  const rows = sorted(a).map(t => ({ t, title: m.tracks?.[t.name]?.title || '', artist: m.tracks?.[t.name]?.artist || '' }));
-  const tt = h('input', { value: m.title || '', placeholder: a.folder.split('/').pop() });
-  const ar = h('input', { value: m.artist || '', placeholder: 'Artista do álbum' });
-  const yr = h('input', { value: m.year || '', placeholder: 'Ano', inputMode: 'numeric' });
-  const cv = h('div', { className: 'cover' });
-  const showCover = () => cover ? paint(cv, cover, a) : (paint(cv, null, a), urlOf(a.cover).then(u => u && paint(cv, u, a)));
-  const file = h('input', { type: 'file', accept: 'image/*', hidden: true, onchange: async e => { if (e.target.files[0]) { cover = await resize(e.target.files[0]); showCover(); } } });
-  const list = h('div', { className: 'rows' });
-  const draw = () => list.replaceChildren(...rows.map((r, i) => {
-    const mv = k => () => { const j = i + k; if (j < 0 || j >= rows.length) return; [rows[i], rows[j]] = [rows[j], rows[i]]; draw(); };
-    return h('div', { className: 'row' }, h('span', { className: 'mut', textContent: i + 1 }),
-      h('input', { value: r.title, placeholder: base(r.t.name), title: r.t.name, oninput: e => r.title = e.target.value }),
-      h('input', { value: r.artist, placeholder: 'Artista da faixa', oninput: e => r.artist = e.target.value }),
-      h('button', { type: 'button', textContent: '↑', title: 'Subir', onclick: mv(-1) }),
-      h('button', { type: 'button', textContent: '↓', title: 'Descer', onclick: mv(1) }));
-  }));
-  showCover(); draw();
-  d.replaceChildren(
-    h('h3', { textContent: 'Cadastrar álbum' }),
-    h('div', { className: 'f' }, cv, tt, ar, yr),
-    h('div', { className: 'acts', style: 'justify-content:flex-start' },
-      h('button', { textContent: 'Escolher capa', onclick: () => file.click() }), file,
-      h('button', { textContent: 'Remover capa', onclick: () => { cover = undefined; showCover(); } })),
-    h('h3', { textContent: 'Faixas (ordem, nome e artista)', style: 'font-size:16px;margin-top:18px' }), list,
-    h('div', { className: 'acts' },
-      h('button', { textContent: 'Cancelar', onclick: () => d.close() }),
-      h('button', { className: 'pri', textContent: 'Salvar', onclick: () => {
-        m.title = tt.value.trim() || undefined; m.artist = ar.value.trim() || undefined;
-        m.year = yr.value.trim() || undefined; m.cover = cover || undefined;
-        m.order = rows.map(r => r.t.name); m.tracks = {};
-        rows.forEach(r => { const ti = r.title.trim(), ao = r.artist.trim(); if (ti || ao) m.tracks[r.t.name] = { title: ti || undefined, artist: ao || undefined }; });
-        save(); d.close(); renderAlbum(a);
-        toast('Cadastro salvo neste navegador. Para aparecer em outros aparelhos e no site publicado, baixe o biblioteca.json e coloque na raiz do repositório.', 'Baixar biblioteca.json', exportMeta);
-      } })));
-  d.showModal();
-}
+/* ===== Grade de álbuns ===== */
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:20px}
+.card{cursor:pointer;padding:10px;border-radius:20px;background:var(--panel);border:1px solid var(--line);transition:transform .2s,box-shadow .2s,border-color .2s}
+.card .cover{border-radius:14px;box-shadow:0 8px 20px -10px rgba(0,0,0,.4)}
+.card b{display:block;margin-top:10px;padding:0 4px;font-weight:600;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.card small{display:block;padding:0 4px 4px;color:var(--mut);font-size:12.5px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.card:focus-visible{outline:2px solid var(--ac);outline-offset:2px}
+@media(hover:hover){.card:hover{transform:translateY(-5px);box-shadow:var(--shadow);border-color:var(--ac)}}
 
-/* ---------- player ---------- */
-const fmt = s => isFinite(s) ? Math.floor(s / 60) + ':' + String(Math.floor(s % 60)).padStart(2, '0') : '0:00';
-let shuffle = false, repeat = 'off', hist = [], played = new Set();
-try { const m = JSON.parse(localStorage.getItem('mp-modes') || '{}'); shuffle = !!m.shuffle; repeat = m.repeat || 'off'; } catch {}
-function paintModes() {
-  $('#shuf').classList.toggle('on', shuffle);
-  $('#shuf').title = 'Aleatório: ' + (shuffle ? 'ligado' : 'desligado');
-  const r = $('#rep'); r.classList.toggle('on', repeat !== 'off'); r.textContent = repeat === 'one' ? '↻1' : '↻';
-  r.title = { off: 'Repetir: desligado', all: 'Repetir: álbum', one: 'Repetir: faixa' }[repeat];
-  try { localStorage.setItem('mp-modes', JSON.stringify({ shuffle, repeat })); } catch {}
-}
-$('#shuf').onclick = () => { shuffle = !shuffle; paintModes(); };
-$('#rep').onclick = () => { repeat = { off: 'all', all: 'one', one: 'off' }[repeat]; paintModes(); };
-paintModes();
-function playList(a, ts, i) { queue = ts.map(t => ({ a, t })); hist = []; played = new Set(); playAt(i); }
-function nextIndex() {
-  const n = queue.length;
-  if (shuffle) {
-    let pool = [...Array(n).keys()].filter(i => !played.has(i));
-    if (!pool.length) {
-      if (repeat === 'off') return -1;
-      played = new Set([qi]); pool = [...Array(n).keys()].filter(i => i !== qi);
-      if (!pool.length) return qi;
-    }
-    return pool[Math.floor(Math.random() * pool.length)];
-  }
-  if (qi + 1 < n) return qi + 1;
-  return repeat === 'all' ? 0 : -1;
-}
-function goNext() { const i = nextIndex(); if (i >= 0) playAt(i); }
-function goPrev() {
-  if (au.currentTime > 3) { au.currentTime = 0; return; }
-  if (shuffle && hist.length > 1) { hist.pop(); played.delete(qi); playAt(hist.pop()); return; }
-  if (qi > 0) playAt(qi - 1); else au.currentTime = 0;
-}
-async function playAt(i) {
-  if (i < 0 || i >= queue.length) return;
-  qi = i; hist.push(i); played.add(i); if (hist.length > 200) hist.shift();
-  const { a, t } = queue[i];
-  au.src = await urlOf(t); au.play().catch(() => {});
-  const title = tname(a, t), artist = tartist(a, t);
-  $('#npt').textContent = title; $('#npa').textContent = artist ? `${artist} — ${atitle(a)}` : atitle(a);
-  setCover($('#npc'), a); mark();
-  if ('mediaSession' in navigator) coverUrl(a).then(u => navigator.mediaSession.metadata =
-    new MediaMetadata({ title, artist, album: atitle(a), artwork: u ? [{ src: u }] : [] }));
-}
-const toggle = () => au.src && (au.paused ? au.play() : au.pause());
-$('#pp').onclick = toggle;
-$('#prev').onclick = goPrev;
-$('#next').onclick = goNext;
-au.onplay = () => $('#pp').textContent = '⏸';
-au.onpause = () => $('#pp').textContent = '▶';
-au.onended = () => {
-  if (repeat === 'one') { au.currentTime = 0; au.play(); return; }
-  const i = nextIndex(); if (i >= 0) playAt(i); else $('#pp').textContent = '▶';
-};
-const fill = el => el.style.setProperty('--p', (el.value - el.min) / (el.max - el.min) * 100 + '%');   // preenchimento das barras
-au.ontimeupdate = () => { $('#cur').textContent = fmt(au.currentTime); $('#seek').value = au.duration ? au.currentTime / au.duration * 1000 : 0; fill($('#seek')); };
-au.onloadedmetadata = () => $('#dur').textContent = fmt(au.duration);
-$('#seek').oninput = e => { fill(e.target); au.duration && (au.currentTime = e.target.value / 1000 * au.duration); };
-$('#vol').oninput = e => { au.volume = e.target.value; fill(e.target); };
-fill($('#vol')); fill($('#seek'));
-if ('mediaSession' in navigator) {
-  navigator.mediaSession.setActionHandler('previoustrack', goPrev);
-  navigator.mediaSession.setActionHandler('nexttrack', goNext);
-}
-addEventListener('keydown', e => { if (e.code === 'Space' && !/INPUT|BUTTON|DIALOG/.test(document.activeElement.tagName)) { e.preventDefault(); toggle(); } });
+/* ===== Álbum aberto ===== */
+.head{display:flex;gap:28px;align-items:flex-end;flex-wrap:wrap;margin:20px 0 26px}
+.head .cover{width:220px;border-radius:22px}
+.head h2{font-size:42px;line-height:1.05}
+.head .btns{display:flex;gap:8px;margin-top:18px;flex-wrap:wrap}
+ol.tracks{list-style:none;margin:0;padding:6px;background:var(--panel);border:1px solid var(--line);border-radius:22px;box-shadow:var(--shadow)}
+ol.tracks li{display:grid;grid-template-columns:40px 1fr auto;gap:12px;align-items:center;padding:10px 14px 10px 8px;border-radius:14px;cursor:pointer;transition:background .15s}
+ol.tracks li>span:first-child{text-align:center;font-variant-numeric:tabular-nums}
+ol.tracks b{font-weight:600}
+ol.tracks div small{display:block;color:var(--mut);font-size:12.5px}
+ol.tracks li>small{font-size:13px;color:var(--mut)}
+ol.tracks li:focus-visible{outline:2px solid var(--ac);outline-offset:-2px}
+@media(hover:hover){ol.tracks li:hover{background:var(--acsoft)}}
+ol.tracks li.on{background:var(--acsoft)}
+ol.tracks li.on b{color:var(--ac)}
+ol.tracks li.on>span:first-child{font-size:0}
+ol.tracks li.on>span:first-child::after{content:"";display:inline-block;width:14px;height:14px;vertical-align:middle;animation:eq 1s ease-in-out infinite;
+  background:linear-gradient(var(--ac),var(--ac)) 0 100%/3px 40% no-repeat,linear-gradient(var(--ac),var(--ac)) 50% 100%/3px 90% no-repeat,linear-gradient(var(--ac),var(--ac)) 100% 100%/3px 60% no-repeat}
+@keyframes eq{0%,100%{background-size:3px 30%,3px 90%,3px 55%}33%{background-size:3px 85%,3px 40%,3px 100%}66%{background-size:3px 45%,3px 100%,3px 30%}}
 
-/* ---------- carregar pasta / exportar / importar ---------- */
-const idb = () => new Promise((res, rej) => { const r = indexedDB.open('mp', 1); r.onupgradeneeded = () => r.result.createObjectStore('k'); r.onsuccess = () => res(r.result); r.onerror = rej; });
-const idbGet = async k => { const d = await idb(); return new Promise(r => { const q = d.transaction('k').objectStore('k').get(k); q.onsuccess = () => r(q.result); q.onerror = () => r(); }); };
-const idbSet = async (k, v) => { const d = await idb(); d.transaction('k', 'readwrite').objectStore('k').put(v, k); };
+.empty{max-width:520px;margin:12vh auto;text-align:center;padding:38px 28px;border:1px dashed var(--track);border-radius:26px;background:var(--glass)}
+.empty h2{margin-bottom:8px}
+.empty p{color:var(--mut);margin:0}
 
-$('#pick').onclick = async () => {
-  if (!window.showDirectoryPicker) return $('#fallback').click();
-  try { const dir = await showDirectoryPicker({ mode: 'read' }); idbSet('dir', dir); $('#reopen').hidden = true; build(await walk(dir)); }
-  catch (e) { if (e.name !== 'AbortError') $('#fallback').click(); }
-};
-$('#fallback').onchange = e => build([...e.target.files].map(f => {
-  const p = f.webkitRelativePath.split('/');
-  return { album: p.slice(1, -1).join('/'), name: f.name, get: () => f };
-}));
-function exportMeta() {   // só os álbuns que existem agora (sem chaves antigas sobrando)
-  const out = albums.length ? Object.fromEntries(albums.map(a => [a.key, M(a)])) : meta;
-  const b = new Blob([JSON.stringify(out, null, 2)], { type: 'application/json' });
-  h('a', { href: URL.createObjectURL(b), download: 'biblioteca.json' }).click();
+/* ===== Player ===== */
+#bar{position:fixed;z-index:30;left:50%;transform:translateX(-50%);bottom:calc(14px + env(safe-area-inset-bottom));width:min(1100px,calc(100% - 28px));
+  display:flex;gap:18px;align-items:center;flex-wrap:wrap;padding:10px 18px;border-radius:24px;
+  background:var(--glass);-webkit-backdrop-filter:blur(20px) saturate(1.6);backdrop-filter:blur(20px) saturate(1.6);
+  border:1px solid var(--line);box-shadow:var(--shadow),0 20px 50px -20px rgba(0,0,0,.35)}
+.np{display:flex;gap:12px;align-items:center;width:270px;min-width:0}
+.np div{min-width:0}
+.np b,.np small{display:block;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.np b{font-weight:600}
+.np small{color:var(--mut);font-size:12.5px}
+.ctl,.modes{display:flex;gap:6px;align-items:center}
+.ctl button,.modes button{width:42px;height:42px;padding:0;border-radius:50%;display:grid;place-items:center;font-size:16px;line-height:1}
+.ctl button#pp{width:50px;height:50px;font-size:18px}
+.modes button.on{background:var(--ac);border-color:var(--ac);color:var(--acink)}
+.seek{display:flex;gap:10px;align-items:center;flex:1;min-width:220px;font-size:12px;font-variant-numeric:tabular-nums;color:var(--mut)}
+.seek input{flex:1}
+#vol{width:96px}
+
+/* ===== Editor ===== */
+dialog{border:1px solid var(--line);border-radius:26px;background:var(--panel);color:var(--ink);width:min(760px,94vw);max-height:90vh;padding:24px;box-shadow:0 30px 80px -20px rgba(0,0,0,.55)}
+dialog[open]{animation:pop .22s ease}
+dialog::backdrop{background:rgba(8,10,16,.55);-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px)}
+@keyframes pop{from{opacity:0;transform:translateY(10px) scale(.98)}}
+.f{display:grid;grid-template-columns:100px 1fr;gap:8px 14px;align-items:center;margin:16px 0}
+.f .cover{grid-row:span 3;width:100px;font-size:36px;border-radius:16px}
+.rows{display:grid;gap:8px;margin:12px 0 18px}
+.row{display:grid;grid-template-columns:28px 1fr 1fr auto auto;gap:6px;align-items:center}
+.row button{padding:6px 11px;border-radius:10px}
+.acts{display:flex;gap:8px;justify-content:flex-end}
+
+/* ===== Toque ===== */
+@media(pointer:coarse){button{min-height:44px;min-width:44px}input[type=range]{height:30px}ol.tracks li{min-height:58px}}
+@media(prefers-reduced-motion:reduce){*,::before,::after{animation:none!important;transition:none!important}}
+
+/* ===== Celular ===== */
+@media(max-width:700px){
+  body{padding-bottom:calc(150px + env(safe-area-inset-bottom))}
+  header{position:static;padding:calc(12px + env(safe-area-inset-top)) 14px 12px;gap:6px}
+  header h1{font-size:21px;width:100%}
+  header button{flex:1 1 auto;padding:8px 10px;font-size:13px}
+  main{padding:16px 14px}
+  .grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+  .card{padding:8px;border-radius:18px}
+  .head{flex-wrap:nowrap;align-items:center;gap:14px;margin:12px 0 16px}
+  .head .cover{width:104px;flex:none;font-size:36px;border-radius:16px}
+  .head>div:last-child{flex:1;min-width:0}
+  .head h2{font-size:24px;overflow-wrap:anywhere}
+  .head .btns{margin-top:10px;gap:6px}
+  .head .btns button{flex:1 1 auto;padding:8px 10px}
+  ol.tracks{padding:4px;border-radius:18px}
+  ol.tracks li{grid-template-columns:30px 1fr auto;padding:8px 8px 8px 4px}
+  input:not([type=range]){font-size:16px}
+  #bar{display:grid;grid-template-columns:1fr auto;grid-template-areas:"np ctl" "seek modes";gap:6px 12px;width:calc(100% - 16px);bottom:calc(8px + env(safe-area-inset-bottom));padding:10px 12px;border-radius:22px}
+  .np{grid-area:np;width:auto}
+  .ctl{grid-area:ctl}
+  .seek{grid-area:seek;min-width:0}
+  .modes{grid-area:modes}
+  #vol{display:none}
+  dialog{width:100vw;max-width:100vw;height:100dvh;max-height:100dvh;margin:0;border-radius:0;border:0;padding:16px 16px 0}
+  .f{grid-template-columns:80px 1fr}
+  .f .cover{width:80px;font-size:30px}
+  .row{grid-template-columns:24px 1fr 44px 44px}
+  .row>:nth-child(1){grid-row:1/3;align-self:start;padding-top:10px}
+  .row>:nth-child(2){grid-column:2;grid-row:1}
+  .row>:nth-child(3){grid-column:2/-1;grid-row:2}
+  .row>:nth-child(4){grid-column:3;grid-row:1}
+  .row>:nth-child(5){grid-column:4;grid-row:1}
+  .rows{gap:12px}
+  dialog .acts:last-child{position:sticky;bottom:0;background:var(--panel);padding:10px 0 calc(10px + env(safe-area-inset-bottom));border-top:1px solid var(--line)}
 }
-$('#exp').onclick = exportMeta;
-let toastTimer;
-function toast(msg, label, fn) {
-  document.querySelector('#toast')?.remove(); clearTimeout(toastTimer);
-  const t = h('div', { id: 'toast', role: 'status', style: 'position:fixed;z-index:60;left:50%;transform:translateX(-50%);bottom:calc(130px + env(safe-area-inset-bottom));width:min(560px,92vw);display:flex;gap:12px;align-items:center;flex-wrap:wrap;padding:12px 16px;border-radius:14px;background:var(--panel,#fff);color:var(--ink,#111);border:1px solid var(--line,#ccc);box-shadow:0 10px 30px rgba(0,0,0,.25);font-size:14px' },
-    h('span', { textContent: msg, style: 'flex:1;min-width:200px' }),
-    h('button', { className: 'pri', textContent: label, onclick: () => { fn(); t.remove(); } }),
-    h('button', { textContent: '✕', title: 'Fechar', onclick: () => t.remove() }));
-  document.body.append(t); toastTimer = setTimeout(() => t.remove(), 20000);
-}
-$('#imp').onchange = async e => {
-  try { Object.assign(meta, JSON.parse(await e.target.files[0].text())); save(); albums.length ? renderGrid() : 0; }
-  catch { alert('Arquivo JSON inválido.'); }
-};
-
-const applyTheme = t => {
-  document.documentElement.dataset.theme = t;
-  $('#theme').textContent = t === 'dark' ? '☀ Modo claro' : '🌙 Modo escuro';
-  $('meta[name=theme-color]').content = t === 'dark' ? '#0c0e14' : '#eef1f5';
-};
-$('#theme').onclick = () => {
-  const t = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
-  try { localStorage.setItem('mp-theme', t); } catch {}
-  applyTheme(t);
-};
-applyTheme(document.documentElement.dataset.theme || 'light');
-
-(async () => {
-  loading = true; renderGrid();
-  if (/^https?:/.test(location.protocol)) {            // servidor com listagem de pastas ou GitHub Pages
-    const gh = GITHUB_REPO || /\.github\.io$/.test(location.hostname);
-    try { const e = await (gh ? scanGithub() : scanHttp()); if (e.some(x => AUDIO.test(x.name))) { loading = false; return build(e); } } catch {}
-  }
-  loading = false; renderGrid();
-  try {                                                  // pasta usada anteriormente
-    const dir = await idbGet('dir'); if (!dir) return;
-    if (await dir.queryPermission({ mode: 'read' }) === 'granted') return build(await walk(dir));
-    const b = $('#reopen'); b.hidden = false; b.textContent = `Reabrir “${dir.name}”`;
-    b.onclick = async () => { if (await dir.requestPermission({ mode: 'read' }) === 'granted') { b.hidden = true; build(await walk(dir)); } };
-  } catch {}
-})();
