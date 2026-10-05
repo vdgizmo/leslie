@@ -173,7 +173,7 @@ function renderAlbum(a) {
       h('div', { className: 'mut', textContent: `${M(a).artist || 'Artista não informado'}${M(a).year ? ' · ' + M(a).year : ''}` }),
       h('div', { className: 'btns' },
         h('button', { className: 'pri', textContent: '▶ Tocar álbum', onclick: () => playList(a, ts, shuffle ? Math.floor(Math.random() * ts.length) : 0) }),
-        h('button', { textContent: 'Cadastrar / editar', onclick: () => openEdit(a) }),   // ← remova o "//" do início para exibir o botão
+        // h('button', { textContent: 'Cadastrar / editar', onclick: () => openEdit(a) }),   // ← remova o "//" do início para exibir o botão
       ))),
     list);
   mark();
