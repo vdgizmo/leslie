@@ -1,1 +1,1 @@
-Apenas um player.
+Apenas um player de música.
