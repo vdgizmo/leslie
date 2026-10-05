@@ -218,6 +218,7 @@ function openEdit(a) {
         m.order = rows.map(r => r.t.name); m.tracks = {};
         rows.forEach(r => { const ti = r.title.trim(), ao = r.artist.trim(); if (ti || ao) m.tracks[r.t.name] = { title: ti || undefined, artist: ao || undefined }; });
         save(); d.close(); renderAlbum(a);
+        toast('Cadastro salvo neste navegador. Para aparecer em outros aparelhos e no site publicado, baixe o biblioteca.json e coloque na raiz do repositório.', 'Baixar biblioteca.json', exportMeta);
       } })));
   d.showModal();
 }
@@ -304,10 +305,21 @@ $('#fallback').onchange = e => build([...e.target.files].map(f => {
   const p = f.webkitRelativePath.split('/');
   return { album: p.slice(1, -1).join('/'), name: f.name, get: () => f };
 }));
-$('#exp').onclick = () => {
-  const b = new Blob([JSON.stringify(meta, null, 2)], { type: 'application/json' });
+function exportMeta() {   // só os álbuns que existem agora (sem chaves antigas sobrando)
+  const out = albums.length ? Object.fromEntries(albums.map(a => [a.key, M(a)])) : meta;
+  const b = new Blob([JSON.stringify(out, null, 2)], { type: 'application/json' });
   h('a', { href: URL.createObjectURL(b), download: 'biblioteca.json' }).click();
-};
+}
+$('#exp').onclick = exportMeta;
+let toastTimer;
+function toast(msg, label, fn) {
+  document.querySelector('#toast')?.remove(); clearTimeout(toastTimer);
+  const t = h('div', { id: 'toast', role: 'status', style: 'position:fixed;z-index:60;left:50%;transform:translateX(-50%);bottom:calc(130px + env(safe-area-inset-bottom));width:min(560px,92vw);display:flex;gap:12px;align-items:center;flex-wrap:wrap;padding:12px 16px;border-radius:14px;background:var(--panel,#fff);color:var(--ink,#111);border:1px solid var(--line,#ccc);box-shadow:0 10px 30px rgba(0,0,0,.25);font-size:14px' },
+    h('span', { textContent: msg, style: 'flex:1;min-width:200px' }),
+    h('button', { className: 'pri', textContent: label, onclick: () => { fn(); t.remove(); } }),
+    h('button', { textContent: '✕', title: 'Fechar', onclick: () => t.remove() }));
+  document.body.append(t); toastTimer = setTimeout(() => t.remove(), 20000);
+}
 $('#imp').onchange = async e => {
   try { Object.assign(meta, JSON.parse(await e.target.files[0].text())); save(); albums.length ? renderGrid() : 0; }
   catch { alert('Arquivo JSON inválido.'); }
