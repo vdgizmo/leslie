@@ -96,40 +96,51 @@
   },
   "Covers and versions": {
     "order": [
-      "27 jennifers.mp3",
-      "400 lux.mp3",
-      "blank space.mp3",
-      "blue (i will bleed i will die).mp3",
-      "burning up.mp3",
-      "cheap and cheerful.mp3",
-      "comfort eagle.mp3",
-      "devils haircut.mp3",
-      "doug.mp3",
-      "down in the park.mp3",
-      "dracula from houston.mp3",
-      "drive my car.mp3",
-      "ethans song.mp3",
-      "garden song.mp3",
-      "girls like you.mp3",
-      "glorious.mp3",
-      "good fucking bye.mp3",
-      "got you (where i want you).mp3",
-      "hate myself.mp3",
-      "i'm gonna be (500 miles).mp3",
-      "if it makes you happy.mp3",
-      "invierno del 92.mp3",
-      "lucky man.mp3",
-      "mamma told me not to come.mp3",
-      "no big deal.mp3",
-      "radiooooo.mp3",
-      "secret for the mad.mp3",
-      "sleep on the left side.mp3",
-      "stadium love.mp3",
-      "the hooch.mp3",
-      "the one moment.mp3",
-      "the other side of mt heart attack.mp3",
-      "two steps behind you.mp3",
-      "united states of whatever.mp3"
+    "27 jennifers.mp3",
+    "400 lux.mp3",
+    "blank space.mp3",
+    "blue (i will bleed i will die).mp3",
+    "buck rogers.mp3",
+    "burning up.mp3",
+    "cheap and cheerful.mp3",
+    "comfort eagle.mp3",
+    "devils haircut.mp3",
+    "doug.mp3",
+    "down in the park.mp3",
+    "dracula from houston.mp3",
+    "drive my car.mp3",
+    "ethans song.mp3",
+    "fresh feeling.mp3",
+    "funeral.mp3",
+    "garden song.mp3",
+    "girls like you.mp3",
+    "glorious.mp3",
+    "good fucking bye.mp3",
+    "got you (where i want you).mp3",
+    "hate myself.mp3",
+    "i'm a pig.mp3",
+    "i'm gonna be (500 miles).mp3",
+    "if it makes you happy.mp3",
+    "inside out.mp3",
+    "invierno del 92.mp3",
+    "lucky man.mp3",
+    "mamma told me not to come.mp3",
+    "mangetout.mp3",
+    "mark iv.mp3",
+    "no big deal.mp3",
+    "piranha.mp3",
+    "radiooooo.mp3",
+    "rosa.mp3",
+    "secret for the mad.mp3",
+    "sleep on the left side.mp3",
+    "soda pop.mp3",
+    "soldier girl.mp3",
+    "stadium love.mp3",
+    "the hooch.mp3",
+    "the one moment.mp3",
+    "the other side of mt heart attack.mp3",
+    "two steps behind you.mp3",
+    "united states of whatever.mp3"
     ],
     "tracks": {
       "27 jennifers.mp3": {
@@ -267,6 +278,50 @@
       "united states of whatever.mp3": {
         "title": "United States Of Whatever",
         "artist": "Liam Lynch"
+      },
+      "buck rogers.mp3": {
+        "title": "Buck Rogers",
+        "artist": "Feeder"
+      },
+      "fresh feeling.mp3": {
+        "title": "Fresh Feeling",
+        "artist": "Eels"
+      },
+      "funeral.mp3": {
+        "title": "Funeral",
+        "artist": "Spanish Love Songs"
+      },
+      "i'm a pig.mp3": {
+        "title": "I Am A Pig",
+        "artist": "Two"
+      },
+      "inside out.mp3": {
+        "title": "Inside Out",
+        "artist": "Eve 6"
+      },
+      "mangetout.mp3": {
+        "title": "mangetout",
+        "artist": "Wet Leg"
+      },
+      "mark iv.mp3": {
+        "title": "Mark IV",
+        "artist": "Ashtar Command"
+      },
+      "piranha.mp3": {
+        "title": "Piranha",
+        "artist": "Tripping Daisy"
+      },
+      "rosa.mp3": {
+        "title": "Rosa",
+        "artist": "Ashtar Command"
+      },
+      "soda pop.mp3": {
+        "title": "Soda Pop",
+        "artist": "Saja Boys"
+      },
+      "soldier girl.mp3": {
+        "title": "Soldier Girl",
+        "artist": "The Polyphonic Spree"
       }
     },
     "title": "Covers and versions",
