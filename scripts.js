@@ -273,7 +273,8 @@ const toggle = () => au.src && (au.paused ? au.play() : au.pause());
 $('#pp').onclick = toggle;
 $('#prev').onclick = goPrev;
 $('#next').onclick = goNext;
-au.onplay = () => $('#pp').textContent = '⏸';
+// au.onplay = () => $('#pp').textContent = '⏸';
+au.onplay = () => $('#pp').innerHTML = '&#10074;&#10074;';
 au.onpause = () => $('#pp').textContent = '▶';
 au.onended = () => {
   if (repeat === 'one') { au.currentTime = 0; au.play(); return; }
