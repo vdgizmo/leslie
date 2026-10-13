@@ -90,7 +90,7 @@ function ghEntries(list) {
 }
 const isEmpty = v => v == null || v === '' || (typeof v === 'object' && !Object.keys(v).length);
 function mergeMeta(f) {   // o arquivo preenche o que o cadastro local ainda não tem
-  for (const k in f) { const l = meta[k] ??= {}; for (const p in f[k]) if (isEmpty(l[p])) l[p] = f[k][p]; }
+  for (const k in f) { const l = meta[k] ??= {}; for (const p in f[k]) if (p !== 'cover' && isEmpty(l[p])) l[p] = f[k][p]; }
 }
 function adoptOrphans() {   // cadastro com chave de pasta diferente (ex.: "") é reaproveitado pelo álbum cujas faixas coincidem
   const keys = new Set(albums.map(a => a.key));
@@ -111,7 +111,7 @@ async function build(entries) {
     if (!m.has(e.album)) m.set(e.album, { key: e.album, folder: e.album || '(raiz)', tracks: [], cover: null });
     const a = m.get(e.album);
     if (AUDIO.test(e.name)) a.tracks.push(e);
-    else if (IMG.test(e.name) && (!a.cover || /cover|capa|folder|front/i.test(e.name))) a.cover = e;
+    else if (/^capa\.png$/i.test(e.name)) a.cover = e;   // a capa é sempre o arquivo capa.png da pasta do álbum
   }
   albums = [...m.values()].filter(a => a.tracks.length).sort((x, y) => collator.compare(x.folder, y.folder));
   adoptOrphans();
@@ -125,16 +125,8 @@ function paint(el, url, a) {
   el.style.backgroundImage = ''; el.style.backgroundColor = `hsl(${n} 38% 42%)`;
   el.textContent = atitle(a).charAt(0).toUpperCase();
 }
-const coverUrl = async a => M(a).cover || await urlOf(a.cover);
+const coverUrl = a => urlOf(a.cover);
 const setCover = (el, a) => { paint(el, null, a); coverUrl(a).then(u => u && paint(el, u, a)); };
-const resize = f => new Promise(r => {
-  const i = new Image();
-  i.onload = () => {
-    const s = Math.min(1, 500 / Math.max(i.width, i.height)), c = h('canvas', { width: i.width * s, height: i.height * s });
-    c.getContext('2d').drawImage(i, 0, 0, c.width, c.height); r(c.toDataURL('image/jpeg', .85));
-  };
-  i.src = URL.createObjectURL(f);
-});
 
 /* ---------- telas ---------- */
 function renderGrid() {
@@ -185,14 +177,12 @@ function mark() {
 
 /* ---------- editor de cadastro ---------- */
 function openEdit(a) {
-  const m = M(a), d = $('#dlg'); let cover = m.cover;
+  const m = M(a), d = $('#dlg');
   const rows = sorted(a).map(t => ({ t, title: m.tracks?.[t.name]?.title || '', artist: m.tracks?.[t.name]?.artist || '' }));
   const tt = h('input', { value: m.title || '', placeholder: a.folder.split('/').pop() });
   const ar = h('input', { value: m.artist || '', placeholder: 'Artista do álbum' });
   const yr = h('input', { value: m.year || '', placeholder: 'Ano', inputMode: 'numeric' });
   const cv = h('div', { className: 'cover' });
-  const showCover = () => cover ? paint(cv, cover, a) : (paint(cv, null, a), urlOf(a.cover).then(u => u && paint(cv, u, a)));
-  const file = h('input', { type: 'file', accept: 'image/*', hidden: true, onchange: async e => { if (e.target.files[0]) { cover = await resize(e.target.files[0]); showCover(); } } });
   const list = h('div', { className: 'rows' });
   const draw = () => list.replaceChildren(...rows.map((r, i) => {
     const mv = k => () => { const j = i + k; if (j < 0 || j >= rows.length) return; [rows[i], rows[j]] = [rows[j], rows[i]]; draw(); };
@@ -202,19 +192,16 @@ function openEdit(a) {
       h('button', { type: 'button', textContent: '↑', title: 'Subir', onclick: mv(-1) }),
       h('button', { type: 'button', textContent: '↓', title: 'Descer', onclick: mv(1) }));
   }));
-  showCover(); draw();
+  setCover(cv, a); draw();
   d.replaceChildren(
     h('h3', { textContent: 'Cadastrar álbum' }),
     h('div', { className: 'f' }, cv, tt, ar, yr),
-    h('div', { className: 'acts', style: 'justify-content:flex-start' },
-      h('button', { textContent: 'Escolher capa', onclick: () => file.click() }), file,
-      h('button', { textContent: 'Remover capa', onclick: () => { cover = undefined; showCover(); } })),
     h('h3', { textContent: 'Faixas (ordem, nome e artista)', style: 'font-size:16px;margin-top:18px' }), list,
     h('div', { className: 'acts' },
       h('button', { textContent: 'Cancelar', onclick: () => d.close() }),
       h('button', { className: 'pri', textContent: 'Salvar', onclick: () => {
         m.title = tt.value.trim() || undefined; m.artist = ar.value.trim() || undefined;
-        m.year = yr.value.trim() || undefined; m.cover = cover || undefined;
+        m.year = yr.value.trim() || undefined; delete m.cover;
         m.order = rows.map(r => r.t.name); m.tracks = {};
         rows.forEach(r => { const ti = r.title.trim(), ao = r.artist.trim(); if (ti || ao) m.tracks[r.t.name] = { title: ti || undefined, artist: ao || undefined }; });
         save(); d.close(); renderAlbum(a);
@@ -307,7 +294,8 @@ $('#fallback').onchange = e => build([...e.target.files].map(f => {
   return { album: p.slice(1, -1).join('/'), name: f.name, get: () => f };
 }));
 function exportMeta() {   // só os álbuns que existem agora (sem chaves antigas sobrando)
-  const out = albums.length ? Object.fromEntries(albums.map(a => [a.key, M(a)])) : meta;
+  const out = JSON.parse(JSON.stringify(albums.length ? Object.fromEntries(albums.map(a => [a.key, M(a)])) : meta));
+  for (const k in out) delete out[k].cover;
   const b = new Blob([JSON.stringify(out, null, 2)], { type: 'application/json' });
   h('a', { href: URL.createObjectURL(b), download: 'biblioteca.json' }).click();
 }
