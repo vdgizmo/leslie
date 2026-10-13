@@ -156,8 +156,8 @@ function renderAlbum(a) {
   ts.forEach((t, i) => list.append(h('li', { tabIndex: 0, onclick: () => playList(a, ts, i), onkeydown: e => e.key === 'Enter' && playList(a, ts, i) },
     h('span', { className: 'mut', textContent: i + 1 }),
     h('div', {}, h('b', { textContent: tname(a, t) }), h('small', { textContent: tartist(a, t) })),
-    h('small', { className: 'mut', textContent: t.name.split('.').pop().toUpperCase() }))));
-  list.querySelectorAll('li').forEach((li, i) => li.dataset.k = a.key + '|' + ts[i].name);
+    h('small', { className: 'mut', textContent: '--:--', style: 'font-variant-numeric:tabular-nums' }))));
+  list.querySelectorAll('li').forEach((li, i) => { li.dataset.k = a.key + '|' + ts[i].name; showDur(li.lastElementChild, ts[i]); });
   v.replaceChildren(
     h('button', { textContent: '← Álbuns', onclick: renderGrid }),
     h('div', { className: 'head' }, cv, h('div', {},
@@ -169,6 +169,18 @@ function renderAlbum(a) {
       ))),
     list);
   mark();
+}
+const durs = new Map();   // duração (mm:ss) de cada faixa, lida dos metadados do áudio
+const dfmt = s => {   // 00:00 (e 0:00:00 só quando chega a 1 hora)
+  if (!isFinite(s)) return '--:--';
+  const p = n => String(n).padStart(2, '0'), H = Math.floor(s / 3600), m = Math.floor(s % 3600 / 60), c = Math.floor(s % 60);
+  return H ? `${H}:${p(m)}:${p(c)}` : `${p(m)}:${p(c)}`;
+};
+async function showDur(el, t) {
+  if (durs.has(t)) { el.textContent = durs.get(t); return; }
+  const x = new Audio(); x.preload = 'metadata';
+  x.onloadedmetadata = () => { const v = dfmt(x.duration); durs.set(t, v); el.textContent = v; x.removeAttribute('src'); x.load(); };
+  x.src = await urlOf(t);
 }
 function mark() {
   const c = queue[qi];
