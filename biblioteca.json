@@ -324,7 +324,7 @@
       }
     },
     "title": "Covers and versions",
-    "artist": "Leslied & The Nielsens",
+    "artist": "Leslie & The Nielsens",
     "year": "2024"
   },
   "Ela já foi quietinha": {
@@ -378,6 +378,7 @@
       "lily in the garden.mp3",
       "insomnia.mp3",
       "polaroid meteor.mp3",
+      "dont love you.mp3",
       "kiyoshi sneaked vodka into my 17th birthday party.mp3",
       "like a hound.mp3",
       "aline.mp3",
@@ -406,6 +407,10 @@
       },
       "polaroid meteor.mp3": {
         "title": "Polaroid meteor",
+        "artist": "Leslie & The Nielsens"
+      },
+      "dont love you.mp3": {
+        "title": "The crash",
         "artist": "Leslie & The Nielsens"
       },
       "kiyoshi sneaked vodka into my 17th birthday party.mp3": {
